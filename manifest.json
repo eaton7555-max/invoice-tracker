@@ -1,8 +1,8 @@
 {
   "name": "Landscape Jobs",
   "short_name": "Landscape",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "https://eaton7555-max.github.io/invoice-tracker/",
+  "scope": "https://eaton7555-max.github.io/invoice-tracker/",
   "display": "standalone",
   "background_color": "#0c1f17",
   "theme_color": "#059669"
