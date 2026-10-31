@@ -1,7 +1,8 @@
 {
-  "name": "Invoice Tracker",
-  "short_name": "Invoices",
-  "start_url": "/",
+  "name": "Landscape Jobs",
+  "short_name": "Landscape",
+  "start_url": "/invoice-tracker/",
+  "scope": "/invoice-tracker/",
   "display": "standalone",
   "background_color": "#0c1f17",
   "theme_color": "#059669",
