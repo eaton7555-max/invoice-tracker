@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Invoices</title>
+  <title>Landscape Jobs</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#059669">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Invoices">
+  <meta name="apple-mobile-web-app-title" content="Landscape">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -18,81 +18,75 @@
       min-height: 100vh;
       padding: 16px;
     }
-    h1 { font-size: 1.6rem; margin-bottom: 4px; }
-    .summary {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 20px;
-      font-size: 0.9rem;
-    }
-    .summary div {
-      background: #14291f;
-      padding: 10px 14px;
-      border-radius: 12px;
-      flex: 1;
-    }
-    .summary .label { color: #86efac; font-size: 0.75rem; }
-    .add-form {
+    h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    .summary { display: flex; gap: 10px; margin-bottom: 16px; font-size: 0.85rem; }
+    .summary div { background: #14291f; padding: 10px 12px; border-radius: 12px; flex: 1; }
+    .summary .label { color: #86efac; font-size: 0.7rem; }
+    .add-form, .job {
       background: #14291f;
       border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
     }
-    input, select, button {
+    input, select, button, textarea {
       font-family: inherit;
       font-size: 1rem;
-      padding: 12px;
-      border-radius: 12px;
+      padding: 10px;
+      border-radius: 10px;
       border: none;
+      width: 100%;
+      margin-bottom: 8px;
     }
-    input, select { background: #0c1f17; color: white; }
-    button.add {
+    input, select, textarea { background: #0c1f17; color: white; }
+    textarea { min-height: 60px; resize: vertical; }
+    button.add, button.line {
       background: #059669;
       color: white;
       font-weight: 600;
       cursor: pointer;
+      width: auto;
+      padding: 10px 16px;
     }
-    .list { display: flex; flex-direction: column; gap: 10px; }
-    .item {
-      background: #14291f;
-      border-radius: 16px;
-      padding: 14px;
-    }
-    .item .top { display: flex; justify-content: space-between; align-items: flex-start; }
-    .item .client { font-weight: 600; }
-    .item .amount { color: #86efac; font-weight: 600; }
-    .item .meta { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
-    .item .actions { margin-top: 10px; display: flex; gap: 8px; }
-    .item button {
-      background: #059669;
-      color: white;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 0.85rem;
-    }
+    button.line { font-size: 0.85rem; margin-bottom: 12px; }
+    .line-item { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .line-item select, .line-item input { margin: 0; flex: 1; }
+    .line-item .qty { max-width: 70px; }
+    .line-item .price { max-width: 90px; }
+    .job .top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .job .client { font-weight: 600; }
+    .job .amount { color: #86efac; font-weight: 600; }
+    .job .meta { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
+    .job .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .job button { width: auto; padding: 6px 12px; font-size: 0.85rem; background: #059669; color: white; }
+    .lines { font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; }
   </style>
 </head>
 <body>
-  <h1>Invoices (USD)</h1>
+  <h1>Landscape Jobs</h1>
   <div class="summary">
     <div><div class="label">Received</div><div id="received">$0</div></div>
     <div><div class="label">Pending</div><div id="pending">$0</div></div>
   </div>
 
   <div class="add-form">
-    <input id="client" placeholder="Client name" />
-    <input id="amount" type="number" step="0.01" placeholder="Amount in USD (before tax)" />
+    <input id="client" placeholder="Customer name" />
+    <input id="crew" placeholder="Crew name" />
+    <div id="lines"></div>
+    <button class="line" type="button" id="addLine">+ Add line item</button>
     <input id="countyTax" type="number" step="0.01" placeholder="County tax % (e.g. 7.5)" value="0" />
-    <button class="add" id="add">Add Quote</button>
+    <textarea id="notes" placeholder="Notes (access, photos link, special instructions…)"></textarea>
+    <button class="add" id="save">Save Job</button>
   </div>
 
-  <div class="list" id="list"></div>
+  <div id="list"></div>
 
   <script>
-    const KEY = "invoice-tracker-v1";
+    const SERVICES = [
+      "Mowing", "Edging", "Planting", "Mulching", "Landscape",
+      "Seasonal cleanup", "Tree trimming", "Irrigation", "Hardscape",
+      "Fertilizing", "Leaf removal", "Other"
+    ];
+    const KEY = "landscape-jobs-v1";
 
     function load() {
       try { return JSON.parse(localStorage.getItem(KEY)) || []; }
@@ -103,47 +97,63 @@
     }
 
     function money(n) {
-      return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     }
 
-    function calc(item) {
-      const taxRate = (item.countyTax || 0) / 100;
-      const taxAmount = item.base * taxRate;
-      const total = item.base + taxAmount;
-      return { total: Math.round(total), net: Math.round(total), tax: Math.round(taxAmount) };
+    function addLineRow(service = "Mowing", qty = 1, price = "") {
+      const div = document.createElement("div");
+      div.className = "line-item";
+      div.innerHTML = `
+        <select class="svc">${SERVICES.map(s => `<option ${s===service?"selected":""}>${s}</option>`).join("")}</select>
+        <input class="qty" type="number" step="1" min="1" value="${qty}" placeholder="Qty" />
+        <input class="price" type="number" step="0.01" value="${price}" placeholder="$" />
+      `;
+      document.getElementById("lines").appendChild(div);
+    }
+
+    function getLines() {
+      return Array.from(document.querySelectorAll(".line-item")).map(row => ({
+        service: row.querySelector(".svc").value,
+        qty: parseFloat(row.querySelector(".qty").value) || 1,
+        price: parseFloat(row.querySelector(".price").value) || 0
+      })).filter(l => l.price > 0);
+    }
+
+    function calc(job) {
+      const subtotal = (job.lines || []).reduce((sum, l) => sum + (l.qty * l.price), 0);
+      const tax = subtotal * ((job.countyTax || 0) / 100);
+      return { subtotal, tax, total: subtotal + tax };
     }
 
     function render() {
-      const items = load();
+      const jobs = load();
       let received = 0, pending = 0;
       const list = document.getElementById("list");
       list.innerHTML = "";
 
-      items.forEach(item => {
-        const c = calc(item);
-        if (item.status === "paid") received += c.net;
-        else if (item.status === "invoiced") pending += c.net;
+      jobs.forEach(job => {
+        const c = calc(job);
+        if (job.status === "paid") received += c.total;
+        else if (job.status === "invoiced") pending += c.total;
 
         const div = document.createElement("div");
-        div.className = "item";
+        div.className = "job";
         let actions = "";
-        if (item.status === "quote") actions = `<button data-id="${item.id}" data-action="advance">Start Work</button>`;
-        else if (item.status === "wip") actions = `<button data-id="${item.id}" data-action="invoice">Raise Invoice</button>`;
-        else if (item.status === "invoiced") actions = `<button data-id="${item.id}" data-action="paid">Mark Paid</button>`;
+        if (job.status === "quote") actions = `<button data-id="${job.id}" data-action="start">Start Work</button>`;
+        else if (job.status === "wip") actions = `<button data-id="${job.id}" data-action="invoice">Raise Invoice</button>`;
+        else if (job.status === "invoiced") actions = `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
 
-        const days = item.invoiceDate ? Math.floor((Date.now() - item.invoiceDate) / 86400000) : 0;
-        const countdown = item.status === "invoiced" ? `<div class="meta">${30 - days} days left</div>` : "";
-
-        const taxLabel = item.countyTax > 0 ? ` + ${item.countyTax}% county tax` : "";
+        const linesText = (job.lines || []).map(l => `${l.qty}× ${l.service} @ ${money(l.price)}`).join("<br>");
 
         div.innerHTML = `
           <div class="top">
             <div>
-              <div class="client">${item.client}</div>
-              <div class="meta">${item.status.toUpperCase()} · Base ${money(item.base)}${taxLabel}</div>
-              ${countdown}
+              <div class="client">${job.client}</div>
+              <div class="meta">${job.crew || "No crew"} · ${job.status.toUpperCase()}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}</div>
+              <div class="lines">${linesText || "No line items"}</div>
+              ${job.notes ? `<div class="meta">Notes: ${job.notes}</div>` : ""}
             </div>
-            <div class="amount">${money(c.net)}</div>
+            <div class="amount">${money(c.total)}</div>
           </div>
           <div class="actions">${actions}</div>
         `;
@@ -159,40 +169,45 @@
     }
 
     function action(id, act) {
-      const items = load();
-      const item = items.find(i => i.id === id);
-      if (!item) return;
-      if (act === "advance") item.status = "wip";
+      const jobs = load();
+      const job = jobs.find(j => j.id === id);
+      if (!job) return;
+      if (act === "start") job.status = "wip";
       else if (act === "invoice") {
-        item.status = "invoiced";
-        item.invoiceDate = Date.now();
+        job.status = "invoiced";
+        job.invoiceDate = Date.now();
       }
-      else if (act === "paid") item.status = "paid";
-      save(items);
+      else if (act === "paid") job.status = "paid";
+      save(jobs);
       render();
     }
 
-    document.getElementById("add").onclick = () => {
+    document.getElementById("addLine").onclick = () => addLineRow();
+    document.getElementById("save").onclick = () => {
       const client = document.getElementById("client").value.trim();
-      const base = parseFloat(document.getElementById("amount").value);
-      const countyTax = parseFloat(document.getElementById("countyTax").value) || 0;
-      if (!client || !base) return;
-      const items = load();
-      items.push({
+      const lines = getLines();
+      if (!client || lines.length === 0) return alert("Need a customer and at least one line item with a price");
+      const jobs = load();
+      jobs.push({
         id: Date.now().toString(),
         client,
-        base,
-        countyTax,
+        crew: document.getElementById("crew").value.trim(),
+        lines,
+        countyTax: parseFloat(document.getElementById("countyTax").value) || 0,
+        notes: document.getElementById("notes").value.trim(),
         status: "quote",
         created: Date.now()
       });
-      save(items);
+      save(jobs);
       document.getElementById("client").value = "";
-      document.getElementById("amount").value = "";
-      document.getElementById("countyTax").value = "0";
+      document.getElementById("crew").value = "";
+      document.getElementById("notes").value = "";
+      document.getElementById("lines").innerHTML = "";
+      addLineRow();
       render();
     };
 
+    addLineRow();
     render();
 
     if ("serviceWorker" in navigator) {
