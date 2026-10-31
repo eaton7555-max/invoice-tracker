@@ -40,7 +40,7 @@
     }
     input, select, textarea { background: #0c1f17; color: white; }
     textarea { min-height: 60px; resize: vertical; }
-    button.add, button.line, button.export {
+    button.add, button.line {
       background: #059669;
       color: white;
       font-weight: 600;
@@ -49,7 +49,6 @@
       padding: 10px 16px;
     }
     button.line { font-size: 0.85rem; margin-bottom: 12px; }
-    button.export { margin: 8px 0 16px; background: #1e3a2f; }
     .line-item { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
     .line-item select, .line-item input { margin: 0; flex: 1; }
     .line-item .qty { max-width: 70px; }
@@ -61,14 +60,6 @@
     .job .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
     .job button { width: auto; padding: 6px 12px; font-size: 0.85rem; background: #059669; color: white; }
     .lines { font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; }
-    #exportBox {
-      display: none;
-      background: #14291f;
-      border-radius: 16px;
-      padding: 14px;
-      margin-bottom: 16px;
-    }
-    #exportBox textarea { min-height: 140px; font-size: 0.8rem; font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -91,13 +82,6 @@
     <button class="add" id="save">Save Job</button>
   </div>
 
-  <button class="export" id="exportBtn">Export for Google Sheets</button>
-  <div id="exportBox">
-    <p style="margin-bottom:8px; font-size:0.85rem;">Copy everything below, then paste into the Google Sheet (starting at row 2):</p>
-    <textarea id="exportText" readonly></textarea>
-    <button class="add" id="copyBtn">Copy to Clipboard</button>
-  </div>
-
   <div id="list"></div>
 
   <script>
@@ -108,6 +92,7 @@
       "Fertilizing", "Leaf removal", "Fountain", "Lawn ornament", "Other"
     ];
     const KEY = "landscape-jobs-v1";
+    const SHEET_URL = "https://script.google.com/macros/s/AKfycbxljqDbThH-aAcGHFdvsyS854LLx43WWgFC8TEKdEO7ffRtn8HJl8UM0yK2DIo5NYmyrQ/exec";
 
     function load() {
       try { return JSON.parse(localStorage.getItem(KEY)) || []; }
@@ -144,6 +129,36 @@
       const subtotal = (job.lines || []).reduce((sum, l) => sum + (l.qty * l.price), 0);
       const tax = subtotal * ((job.countyTax || 0) / 100);
       return { subtotal, tax, total: subtotal + tax };
+    }
+
+    async function sendToSheet(job) {
+      const c = calc(job);
+      const services = (job.lines || []).map(l => `${l.qty}x ${l.service} @ $${l.price}`).join("; ");
+      const payload = {
+        date: new Date(job.created).toISOString().slice(0, 10),
+        client: job.client,
+        address: job.address || "",
+        phone: job.phone || "",
+        email: job.email || "",
+        crew: job.crew || "",
+        status: job.status,
+        services,
+        subtotal: c.subtotal,
+        countyTax: job.countyTax || 0,
+        tax: c.tax,
+        total: c.total,
+        notes: job.notes || ""
+      };
+      try {
+        await fetch(SHEET_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.log("Sheet sync failed", e);
+      }
     }
 
     function makeInvoice(job) {
@@ -281,12 +296,12 @@
     }
 
     document.getElementById("addLine").onclick = () => addLineRow();
-    document.getElementById("save").onclick = () => {
+    document.getElementById("save").onclick = async () => {
       const client = document.getElementById("client").value.trim();
       const lines = getLines();
       if (!client || lines.length === 0) return alert("Need a customer and at least one line item with a price");
       const jobs = load();
-      jobs.push({
+      const job = {
         id: Date.now().toString(),
         client,
         address: document.getElementById("address").value.trim(),
@@ -298,8 +313,10 @@
         notes: document.getElementById("notes").value.trim(),
         status: "quote",
         created: Date.now()
-      });
+      };
+      jobs.push(job);
       save(jobs);
+      sendToSheet(job);
       document.getElementById("client").value = "";
       document.getElementById("address").value = "";
       document.getElementById("phone").value = "";
@@ -309,45 +326,6 @@
       document.getElementById("lines").innerHTML = "";
       addLineRow();
       render();
-    };
-
-    document.getElementById("exportBtn").onclick = () => {
-      const jobs = load();
-      if (jobs.length === 0) return alert("No jobs to export yet");
-      const rows = jobs.map(job => {
-        const c = calc(job);
-        const services = (job.lines || []).map(l => `${l.qty}x ${l.service} @ $${l.price}`).join("; ");
-        const date = new Date(job.created).toISOString().slice(0, 10);
-        return [
-          date,
-          job.client,
-          job.address || "",
-          job.phone || "",
-          job.email || "",
-          job.crew || "",
-          job.status,
-          services,
-          c.subtotal.toFixed(2),
-          job.countyTax || 0,
-          c.tax.toFixed(2),
-          c.total.toFixed(2),
-          job.notes || ""
-        ].join("\t");
-      });
-      document.getElementById("exportText").value = rows.join("\n");
-      document.getElementById("exportBox").style.display = "block";
-    };
-
-    document.getElementById("copyBtn").onclick = () => {
-      const text = document.getElementById("exportText");
-      text.select();
-      text.setSelectionRange(0, 99999);
-      navigator.clipboard.writeText(text.value).then(() => {
-        alert("Copied! Open the Google Sheet and paste starting at row 2.");
-      }).catch(() => {
-        document.execCommand("copy");
-        alert("Copied! Open the Google Sheet and paste starting at row 2.");
-      });
     };
 
     addLineRow();
