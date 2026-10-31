@@ -40,7 +40,7 @@
     }
     input, select, textarea { background: #0c1f17; color: white; }
     textarea { min-height: 60px; resize: vertical; }
-    button.add, button.line {
+    button.add, button.line, button.clear {
       background: #059669;
       color: white;
       font-weight: 600;
@@ -49,6 +49,7 @@
       padding: 10px 16px;
     }
     button.line { font-size: 0.85rem; margin-bottom: 12px; }
+    button.clear { background: #7f1d1d; margin-top: 8px; }
     .line-item { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
     .line-item select, .line-item input { margin: 0; flex: 1; }
     .line-item .qty { max-width: 70px; }
@@ -81,6 +82,8 @@
     <textarea id="notes" placeholder="Notes (access, photos link, special instructions…)"></textarea>
     <button class="add" id="save">Save Job</button>
   </div>
+
+  <button class="clear" id="clearBtn">Clear Phone Jobs</button>
 
   <div id="list"></div>
 
@@ -325,6 +328,14 @@
       document.getElementById("lines").innerHTML = "";
       addLineRow();
       render();
+    };
+
+    document.getElementById("clearBtn").onclick = () => {
+      if (confirm("Clear all jobs from this phone? The Google Sheet will not be affected.")) {
+        localStorage.removeItem(KEY);
+        render();
+        alert("Phone jobs cleared.");
+      }
     };
 
     addLineRow();
