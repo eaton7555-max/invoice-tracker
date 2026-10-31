@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Landscape">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -81,6 +82,7 @@
   <div id="list"></div>
 
   <script>
+    const { jsPDF } = window.jspdf;
     const SERVICES = [
       "Mowing", "Edging", "Planting", "Mulching", "Landscape",
       "Seasonal cleanup", "Tree trimming", "Irrigation", "Hardscape",
@@ -97,7 +99,7 @@
     }
 
     function money(n) {
-      return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     function addLineRow(service = "Mowing", qty = 1, price = "") {
@@ -125,6 +127,64 @@
       return { subtotal, tax, total: subtotal + tax };
     }
 
+    function makeInvoice(job) {
+      const c = calc(job);
+      const doc = new jsPDF();
+      const date = new Date(job.created).toLocaleDateString();
+
+      doc.setFontSize(20);
+      doc.text("INVOICE", 20, 25);
+      doc.setFontSize(11);
+      doc.text(`Date: ${date}`, 20, 35);
+      doc.text(`Customer: ${job.client}`, 20, 42);
+      if (job.crew) doc.text(`Crew: ${job.crew}`, 20, 49);
+
+      let y = 65;
+      doc.setFontSize(12);
+      doc.text("Description", 20, y);
+      doc.text("Qty", 110, y);
+      doc.text("Price", 140, y);
+      doc.text("Amount", 170, y);
+      y += 8;
+      doc.setLineWidth(0.2);
+      doc.line(20, y, 190, y);
+      y += 8;
+
+      (job.lines || []).forEach(line => {
+        const amt = line.qty * line.price;
+        doc.setFontSize(10);
+        doc.text(line.service, 20, y);
+        doc.text(String(line.qty), 110, y);
+        doc.text(money(line.price), 140, y);
+        doc.text(money(amt), 170, y);
+        y += 7;
+      });
+
+      y += 5;
+      doc.line(20, y, 190, y);
+      y += 10;
+      doc.setFontSize(11);
+      doc.text(`Subtotal: ${money(c.subtotal)}`, 130, y);
+      y += 7;
+      if (job.countyTax > 0) {
+        doc.text(`County tax (${job.countyTax}%): ${money(c.tax)}`, 130, y);
+        y += 7;
+      }
+      doc.setFontSize(13);
+      doc.text(`Total: ${money(c.total)}`, 130, y);
+
+      if (job.notes) {
+        y += 15;
+        doc.setFontSize(10);
+        doc.text("Notes:", 20, y);
+        y += 6;
+        const split = doc.splitTextToSize(job.notes, 170);
+        doc.text(split, 20, y);
+      }
+
+      doc.save(`Invoice-${job.client.replace(/\s+/g, "-")}.pdf`);
+    }
+
     function render() {
       const jobs = load();
       let received = 0, pending = 0;
@@ -138,10 +198,10 @@
 
         const div = document.createElement("div");
         div.className = "job";
-        let actions = "";
-        if (job.status === "quote") actions = `<button data-id="${job.id}" data-action="start">Start Work</button>`;
-        else if (job.status === "wip") actions = `<button data-id="${job.id}" data-action="invoice">Raise Invoice</button>`;
-        else if (job.status === "invoiced") actions = `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
+        let actions = `<button data-id="${job.id}" data-action="pdf">View Invoice</button>`;
+        if (job.status === "quote") actions += `<button data-id="${job.id}" data-action="start">Start Work</button>`;
+        else if (job.status === "wip") actions += `<button data-id="${job.id}" data-action="invoice">Raise Invoice</button>`;
+        else if (job.status === "invoiced") actions += `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
 
         const linesText = (job.lines || []).map(l => `${l.qty}× ${l.service} @ ${money(l.price)}`).join("<br>");
 
@@ -172,6 +232,10 @@
       const jobs = load();
       const job = jobs.find(j => j.id === id);
       if (!job) return;
+      if (act === "pdf") {
+        makeInvoice(job);
+        return;
+      }
       if (act === "start") job.status = "wip";
       else if (act === "invoice") {
         job.status = "invoiced";
