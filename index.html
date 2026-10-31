@@ -71,6 +71,9 @@
 
   <div class="add-form">
     <input id="client" placeholder="Customer name" />
+    <input id="address" placeholder="Customer address" />
+    <input id="phone" placeholder="Phone (optional)" />
+    <input id="email" placeholder="Email (optional)" />
     <input id="crew" placeholder="Crew name" />
     <div id="lines"></div>
     <button class="line" type="button" id="addLine">+ Add line item</button>
@@ -136,16 +139,30 @@
       doc.text("INVOICE", 20, 25);
       doc.setFontSize(11);
       doc.text(`Date: ${date}`, 20, 35);
-      doc.text(`Customer: ${job.client}`, 20, 42);
-      if (job.crew) doc.text(`Crew: ${job.crew}`, 20, 49);
 
-      let y = 65;
+      doc.text(`Bill To:`, 20, 48);
+      doc.setFontSize(12);
+      doc.text(job.client, 20, 55);
+      doc.setFontSize(10);
+      if (job.address) {
+        const addrLines = doc.splitTextToSize(job.address, 80);
+        doc.text(addrLines, 20, 61);
+      }
+      if (job.phone) doc.text(job.phone, 20, 75);
+      if (job.email) doc.text(job.email, 20, 81);
+
+      if (job.crew) {
+        doc.setFontSize(11);
+        doc.text(`Crew: ${job.crew}`, 120, 48);
+      }
+
+      let y = 95;
       doc.setFontSize(12);
       doc.text("Description", 20, y);
       doc.text("Qty", 110, y);
       doc.text("Price", 140, y);
       doc.text("Amount", 170, y);
-      y += 8;
+      y += 6;
       doc.setLineWidth(0.2);
       doc.line(20, y, 190, y);
       y += 8;
@@ -160,7 +177,7 @@
         y += 7;
       });
 
-      y += 5;
+      y += 4;
       doc.line(20, y, 190, y);
       y += 10;
       doc.setFontSize(11);
@@ -171,7 +188,7 @@
         y += 7;
       }
       doc.setFontSize(13);
-      doc.text(`Total: ${money(c.total)}`, 130, y);
+      doc.text(`Total Due: ${money(c.total)}`, 130, y);
 
       if (job.notes) {
         y += 15;
@@ -210,6 +227,7 @@
             <div>
               <div class="client">${job.client}</div>
               <div class="meta">${job.crew || "No crew"} · ${job.status.toUpperCase()}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}</div>
+              ${job.address ? `<div class="meta">${job.address}</div>` : ""}
               <div class="lines">${linesText || "No line items"}</div>
               ${job.notes ? `<div class="meta">Notes: ${job.notes}</div>` : ""}
             </div>
@@ -255,6 +273,9 @@
       jobs.push({
         id: Date.now().toString(),
         client,
+        address: document.getElementById("address").value.trim(),
+        phone: document.getElementById("phone").value.trim(),
+        email: document.getElementById("email").value.trim(),
         crew: document.getElementById("crew").value.trim(),
         lines,
         countyTax: parseFloat(document.getElementById("countyTax").value) || 0,
@@ -264,6 +285,9 @@
       });
       save(jobs);
       document.getElementById("client").value = "";
+      document.getElementById("address").value = "";
+      document.getElementById("phone").value = "";
+      document.getElementById("email").value = "";
       document.getElementById("crew").value = "";
       document.getElementById("notes").value = "";
       document.getElementById("lines").innerHTML = "";
