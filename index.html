@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Invoices</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#059669">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Invoices">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0c1f17;
+      color: #f8fafc;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    .summary {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+    }
+    .summary div {
+      background: #14291f;
+      padding: 10px 14px;
+      border-radius: 12px;
+      flex: 1;
+    }
+    .summary .label { color: #86efac; font-size: 0.75rem; }
+    .add-form {
+      background: #14291f;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input, select, button {
+      font-family: inherit;
+      font-size: 1rem;
+      padding: 12px;
+      border-radius: 12px;
+      border: none;
+    }
+    input, select { background: #0c1f17; color: white; }
+    button.add {
+      background: #059669;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .list { display: flex; flex-direction: column; gap: 10px; }
+    .item {
+      background: #14291f;
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .item .top { display: flex; justify-content: space-between; align-items: flex-start; }
+    .item .client { font-weight: 600; }
+    .item .amount { color: #86efac; font-weight: 600; }
+    .item .meta { font-size: 0.8rem; color: #94a3b8; margin-top: 4px; }
+    .item .actions { margin-top: 10px; display: flex; gap: 8px; }
+    .item button {
+      background: #059669;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .status { font-size: 0.75rem; padding: 2px 8px; border-radius: 99px; background: #1e3a2f; }
+  </style>
+</head>
+<body>
+  <h1>Invoices</h1>
+  <div class="summary">
+    <div><div class="label">Received</div><div id="received">$0</div></div>
+    <div><div class="label">Pending</div><div id="pending">$0</div></div>
+  </div>
+
+  <div class="add-form">
+    <input id="client" placeholder="Client name" />
+    <input id="amount" type="number" placeholder="Amount (before tax)" />
+    <div style="display:flex; gap:8px;">
+      <label style="flex:1;"><input type="checkbox" id="gst" checked> GST 18%</label>
+      <select id="tds">
+        <option value="0">No TDS</option>
+        <option value="1">TDS 1%</option>
+        <option value="10">TDS 10%</option>
+      </select>
+    </div>
+    <button class="add" id="add">Add Quote</button>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <script>
+    const KEY = "invoice-tracker-v1";
+
+    function load() {
+      try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+      catch { return []; }
+    }
+    function save(items) {
+      localStorage.setItem(KEY, JSON.stringify(items));
+    }
+
+    function calc(item) {
+      let total = item.base;
+      if (item.gst) total *= 1.18;
+      const tds = item.tds ? total * (item.tds / 100) : 0;
+      return { total: Math.round(total), net: Math.round(total - tds), tds: Math.round(tds) };
+    }
+
+    function render() {
+      const items = load();
+      let received = 0, pending = 0;
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+
+      items.forEach(item => {
+        const c = calc(item);
+        if (item.status === "paid") received += c.net;
+        else if (item.status === "invoiced") pending += c.net;
+
+        const div = document.createElement("div");
+        div.className = "item";
+        let actions = "";
+        if (item.status === "quote") actions = `<button data-id="${item.id}" data-action="advance">Start Work</button>`;
+        else if (item.status === "wip") actions = `<button data-id="${item.id}" data-action="invoice">Raise Invoice</button>`;
+        else if (item.status === "invoiced") actions = `<button data-id="${item.id}" data-action="paid">Mark Paid</button>`;
+
+        const days = item.invoiceDate ? Math.floor((Date.now() - item.invoiceDate) / 86400000) : 0;
+        const countdown = item.status === "invoiced" ? `<div class="meta">${30 - days} days left</div>` : "";
+
+        div.innerHTML = `
+          <div class="top">
+            <div>
+              <div class="client">${item.client}</div>
+              <div class="meta">${item.status.toUpperCase()} · Base $${item.base}${item.gst ? " +GST" : ""}${item.tds ? " · TDS "+item.tds+"%" : ""}</div>
+              ${countdown}
+            </div>
+            <div class="amount">$${c.net}</div>
+          </div>
+          <div class="actions">${actions}</div>
+        `;
+        list.appendChild(div);
+      });
+
+      document.getElementById("received").textContent = "$" + received;
+      document.getElementById("pending").textContent = "$" + pending;
+
+      list.querySelectorAll("button").forEach(btn => {
+        btn.onclick = () => action(btn.dataset.id, btn.dataset.action);
+      });
+    }
+
+    function action(id, act) {
+      const items = load();
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      if (act === "advance") item.status = "wip";
+      else if (act === "invoice") {
+        item.status = "invoiced";
+        item.invoiceDate = Date.now();
+      }
+      else if (act === "paid") item.status = "paid";
+      save(items);
+      render();
+    }
+
+    document.getElementById("add").onclick = () => {
+      const client = document.getElementById("client").value.trim();
+      const base = parseFloat(document.getElementById("amount").value);
+      if (!client || !base) return;
+      const items = load();
+      items.push({
+        id: Date.now().toString(),
+        client,
+        base,
+        gst: document.getElementById("gst").checked,
+        tds: parseInt(document.getElementById("tds").value, 10),
+        status: "quote",
+        created: Date.now()
+      });
+      save(items);
+      document.getElementById("client").value = "";
+      document.getElementById("amount").value = "";
+      render();
+    };
+
+    render();
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>
