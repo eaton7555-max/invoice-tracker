@@ -23,7 +23,7 @@
     .summary { display: flex; gap: 10px; margin-bottom: 16px; font-size: 0.85rem; }
     .summary div { background: #14291f; padding: 10px 12px; border-radius: 12px; flex: 1; }
     .summary .label { color: #86efac; font-size: 0.7rem; }
-    .add-form, .job {
+    .add-form, .job, .biz-form {
       background: #14291f;
       border-radius: 16px;
       padding: 14px;
@@ -40,7 +40,7 @@
     }
     input, select, textarea { background: #0c1f17; color: white; }
     textarea { min-height: 60px; resize: vertical; }
-    button.add, button.line, button.clear {
+    button.add, button.line, button.clear, button.save-biz {
       background: #059669;
       color: white;
       font-weight: 600;
@@ -50,6 +50,7 @@
     }
     button.line { font-size: 0.85rem; margin-bottom: 12px; }
     button.clear { background: #7f1d1d; margin-top: 8px; }
+    button.save-biz { margin-top: 4px; }
     .line-item { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
     .line-item select, .line-item input { margin: 0; flex: 1; }
     .line-item .qty { max-width: 70px; }
@@ -61,6 +62,7 @@
     .job .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
     .job button { width: auto; padding: 6px 12px; font-size: 0.85rem; background: #059669; color: white; }
     .lines { font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; }
+    .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 6px; background: #1e3a2f; }
   </style>
 </head>
 <body>
@@ -68,6 +70,14 @@
   <div class="summary">
     <div><div class="label">Received</div><div id="received">$0</div></div>
     <div><div class="label">Pending</div><div id="pending">$0</div></div>
+  </div>
+
+  <div class="biz-form">
+    <div style="font-size:0.85rem; margin-bottom:8px; color:#86efac;">Your Business Info (appears on invoices)</div>
+    <input id="bizName" placeholder="Business name" />
+    <input id="bizAddress" placeholder="Business address" />
+    <input id="bizPhone" placeholder="Business phone" />
+    <button class="save-biz" id="saveBiz">Save Business Info</button>
   </div>
 
   <div class="add-form">
@@ -92,9 +102,11 @@
     const SERVICES = [
       "Mowing", "Edging", "Planting", "Mulching", "Landscape",
       "Seasonal cleanup", "Tree trimming", "Irrigation", "Hardscape",
-      "Fertilizing", "Leaf removal", "Fountain", "Lawn ornament", "Other"
+      "Fertilizing", "Leaf removal", "Fountain", "Lawn ornament",
+      "Aeration", "Overseeding", "Weed control", "Other"
     ];
-    const KEY = "landscape-jobs-v1";
+    const KEY = "landscape-jobs-v2";
+    const BIZ_KEY = "landscape-biz-v1";
     const SHEET_URL = "https://script.google.com/macros/s/AKfycbxljqDbThH-aAcGHFdvsyS854LLx43WWgFC8TEKdEO7ffRtn8HJl8UM0yK2DIo5NYmyrQ/exec";
 
     function load() {
@@ -104,9 +116,22 @@
     function save(items) {
       localStorage.setItem(KEY, JSON.stringify(items));
     }
+    function loadBiz() {
+      try { return JSON.parse(localStorage.getItem(BIZ_KEY)) || {}; }
+      catch { return {}; }
+    }
+    function saveBiz(biz) {
+      localStorage.setItem(BIZ_KEY, JSON.stringify(biz));
+    }
 
     function money(n) {
       return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function nextInvoiceNum() {
+      const jobs = load();
+      const nums = jobs.map(j => j.invoiceNum || 0);
+      return Math.max(1000, ...nums) + 1;
     }
 
     function addLineRow(service = "Mowing", qty = 1, price = "") {
@@ -165,37 +190,47 @@
 
     function makeInvoice(job) {
       const c = calc(job);
+      const biz = loadBiz();
       const doc = new jsPDF();
       const date = new Date(job.created).toLocaleDateString();
+      const invNum = job.invoiceNum || "—";
 
-      doc.setFontSize(20);
-      doc.text("INVOICE", 20, 25);
+      doc.setFontSize(18);
+      doc.text(biz.name || "Landscape Services", 20, 22);
+      doc.setFontSize(10);
+      if (biz.address) doc.text(biz.address, 20, 28);
+      if (biz.phone) doc.text(biz.phone, 20, 34);
+
+      doc.setFontSize(16);
+      doc.text("INVOICE", 140, 22);
       doc.setFontSize(11);
-      doc.text(`Date: ${date}`, 20, 35);
+      doc.text(`#${invNum}`, 140, 30);
+      doc.text(`Date: ${date}`, 140, 36);
 
-      doc.text(`Bill To:`, 20, 48);
+      doc.setFontSize(11);
+      doc.text("Bill To:", 20, 50);
       doc.setFontSize(12);
-      doc.text(job.client, 20, 55);
+      doc.text(job.client, 20, 57);
       doc.setFontSize(10);
       if (job.address) {
-        const addrLines = doc.splitTextToSize(job.address, 80);
-        doc.text(addrLines, 20, 61);
+        const addrLines = doc.splitTextToSize(job.address, 90);
+        doc.text(addrLines, 20, 63);
       }
-      if (job.phone) doc.text(job.phone, 20, 75);
-      if (job.email) doc.text(job.email, 20, 81);
+      if (job.phone) doc.text(job.phone, 20, 78);
+      if (job.email) doc.text(job.email, 20, 84);
 
       if (job.crew) {
         doc.setFontSize(11);
-        doc.text(`Crew: ${job.crew}`, 120, 48);
+        doc.text(`Crew: ${job.crew}`, 120, 50);
       }
 
-      let y = 95;
-      doc.setFontSize(12);
+      let y = 100;
+      doc.setFontSize(11);
       doc.text("Description", 20, y);
       doc.text("Qty", 110, y);
       doc.text("Price", 140, y);
       doc.text("Amount", 170, y);
-      y += 6;
+      y += 5;
       doc.setLineWidth(0.2);
       doc.line(20, y, 190, y);
       y += 8;
@@ -232,7 +267,10 @@
         doc.text(split, 20, y);
       }
 
-      doc.save(`Invoice-${job.client.replace(/\s+/g, "-")}.pdf`);
+      doc.setFontSize(9);
+      doc.text("Thank you for your business!", 20, 270);
+
+      doc.save(`Invoice-${invNum}-${job.client.replace(/\s+/g, "-")}.pdf`);
     }
 
     function render() {
@@ -254,12 +292,13 @@
         else if (job.status === "invoiced") actions += `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
 
         const linesText = (job.lines || []).map(l => `${l.qty}× ${l.service} @ ${money(l.price)}`).join("<br>");
+        const statusClass = job.status === "paid" ? "paid" : job.status === "invoiced" ? "invoiced" : "";
 
         div.innerHTML = `
           <div class="top">
             <div>
-              <div class="client">${job.client}</div>
-              <div class="meta">${job.crew || "No crew"} · ${job.status.toUpperCase()}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}</div>
+              <div class="client">${job.client} <span class="status-badge">${job.status.toUpperCase()}</span></div>
+              <div class="meta">${job.crew || "No crew"}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}${job.invoiceNum ? " · Inv #" + job.invoiceNum : ""}</div>
               ${job.address ? `<div class="meta">${job.address}</div>` : ""}
               <div class="lines">${linesText || "No line items"}</div>
               ${job.notes ? `<div class="meta">Notes: ${job.notes}</div>` : ""}
@@ -291,6 +330,7 @@
       else if (act === "invoice") {
         job.status = "invoiced";
         job.invoiceDate = Date.now();
+        if (!job.invoiceNum) job.invoiceNum = nextInvoiceNum();
       }
       else if (act === "paid") job.status = "paid";
       save(jobs);
@@ -305,6 +345,7 @@
       const jobs = load();
       const job = {
         id: Date.now().toString(),
+        invoiceNum: nextInvoiceNum(),
         client,
         address: document.getElementById("address").value.trim(),
         phone: document.getElementById("phone").value.trim(),
@@ -330,6 +371,16 @@
       render();
     };
 
+    document.getElementById("saveBiz").onclick = () => {
+      const biz = {
+        name: document.getElementById("bizName").value.trim(),
+        address: document.getElementById("bizAddress").value.trim(),
+        phone: document.getElementById("bizPhone").value.trim()
+      };
+      saveBiz(biz);
+      alert("Business info saved. It will appear on new invoices.");
+    };
+
     document.getElementById("clearBtn").onclick = () => {
       if (confirm("Clear all jobs from this phone? The Google Sheet will not be affected.")) {
         localStorage.removeItem(KEY);
@@ -337,6 +388,12 @@
         alert("Phone jobs cleared.");
       }
     };
+
+    // Load business info into form
+    const biz = loadBiz();
+    if (biz.name) document.getElementById("bizName").value = biz.name;
+    if (biz.address) document.getElementById("bizAddress").value = biz.address;
+    if (biz.phone) document.getElementById("bizPhone").value = biz.phone;
 
     addLineRow();
     render();
