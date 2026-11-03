@@ -20,8 +20,8 @@
       padding: 16px;
     }
     h1 { font-size: 1.5rem; margin-bottom: 4px; }
-    .summary { display: flex; gap: 10px; margin-bottom: 16px; font-size: 0.85rem; }
-    .summary div { background: #14291f; padding: 10px 12px; border-radius: 12px; flex: 1; }
+    .summary { display: flex; gap: 10px; margin-bottom: 12px; font-size: 0.85rem; flex-wrap: wrap; }
+    .summary div { background: #14291f; padding: 10px 12px; border-radius: 12px; flex: 1; min-width: 120px; }
     .summary .label { color: #86efac; font-size: 0.7rem; }
     .add-form, .job, .biz-form {
       background: #14291f;
@@ -63,6 +63,8 @@
     .job button { width: auto; padding: 6px 12px; font-size: 0.85rem; background: #059669; color: white; }
     .lines { font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; }
     .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 6px; background: #1e3a2f; }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
   </style>
 </head>
 <body>
@@ -70,6 +72,7 @@
   <div class="summary">
     <div><div class="label">Received</div><div id="received">$0</div></div>
     <div><div class="label">Pending</div><div id="pending">$0</div></div>
+    <div><div class="label">Jobs</div><div id="jobCount">0</div></div>
   </div>
 
   <div class="biz-form">
@@ -77,6 +80,10 @@
     <input id="bizName" placeholder="Business name" />
     <input id="bizAddress" placeholder="Business address" />
     <input id="bizPhone" placeholder="Business phone" />
+    <div class="row">
+      <input id="paymentTerms" type="number" placeholder="Payment terms (days)" value="14" />
+      <input id="discountDefault" type="number" step="0.01" placeholder="Default discount %" value="0" />
+    </div>
     <button class="save-biz" id="saveBiz">Save Business Info</button>
   </div>
 
@@ -88,7 +95,10 @@
     <input id="crew" placeholder="Crew name" />
     <div id="lines"></div>
     <button class="line" type="button" id="addLine">+ Add line item</button>
-    <input id="countyTax" type="number" step="0.01" placeholder="County tax % (e.g. 7.5)" value="0" />
+    <div class="row">
+      <input id="countyTax" type="number" step="0.01" placeholder="County tax %" value="0" />
+      <input id="discount" type="number" step="0.01" placeholder="Discount %" value="0" />
+    </div>
     <textarea id="notes" placeholder="Notes (access, photos link, special instructions…)"></textarea>
     <button class="add" id="save">Save Job</button>
   </div>
@@ -105,9 +115,17 @@
       "Fertilizing", "Leaf removal", "Fountain", "Lawn ornament",
       "Aeration", "Overseeding", "Weed control", "Other"
     ];
-    const KEY = "landscape-jobs-v2";
-    const BIZ_KEY = "landscape-biz-v1";
+    const KEY = "landscape-jobs-v3";
+    const BIZ_KEY = "landscape-biz-v2";
     const SHEET_URL = "https://script.google.com/macros/s/AKfycbxljqDbThH-aAcGHFdvsyS854LLx43WWgFC8TEKdEO7ffRtn8HJl8UM0yK2DIo5NYmyrQ/exec";
+
+    const STATUS_LABELS = {
+      quote: "Quoted",
+      accepted: "Accepted",
+      wip: "Work in Progress",
+      invoiced: "Invoiced",
+      paid: "Paid"
+    };
 
     function load() {
       try { return JSON.parse(localStorage.getItem(KEY)) || []; }
@@ -117,8 +135,8 @@
       localStorage.setItem(KEY, JSON.stringify(items));
     }
     function loadBiz() {
-      try { return JSON.parse(localStorage.getItem(BIZ_KEY)) || {}; }
-      catch { return {}; }
+      try { return JSON.parse(localStorage.getItem(BIZ_KEY)) || { paymentTerms: 14, discountDefault: 0 }; }
+      catch { return { paymentTerms: 14, discountDefault: 0 }; }
     }
     function saveBiz(biz) {
       localStorage.setItem(BIZ_KEY, JSON.stringify(biz));
@@ -155,8 +173,18 @@
 
     function calc(job) {
       const subtotal = (job.lines || []).reduce((sum, l) => sum + (l.qty * l.price), 0);
-      const tax = subtotal * ((job.countyTax || 0) / 100);
-      return { subtotal, tax, total: subtotal + tax };
+      const discount = subtotal * ((job.discount || 0) / 100);
+      const afterDiscount = subtotal - discount;
+      const tax = afterDiscount * ((job.countyTax || 0) / 100);
+      return { subtotal, discount, afterDiscount, tax, total: afterDiscount + tax };
+    }
+
+    function dueDate(job) {
+      const biz = loadBiz();
+      const days = biz.paymentTerms || 14;
+      const d = new Date(job.created);
+      d.setDate(d.getDate() + days);
+      return d.toLocaleDateString();
     }
 
     async function sendToSheet(job) {
@@ -194,6 +222,7 @@
       const doc = new jsPDF();
       const date = new Date(job.created).toLocaleDateString();
       const invNum = job.invoiceNum || "—";
+      const due = dueDate(job);
 
       doc.setFontSize(18);
       doc.text(biz.name || "Landscape Services", 20, 22);
@@ -206,25 +235,26 @@
       doc.setFontSize(11);
       doc.text(`#${invNum}`, 140, 30);
       doc.text(`Date: ${date}`, 140, 36);
+      doc.text(`Due: ${due}`, 140, 42);
 
       doc.setFontSize(11);
-      doc.text("Bill To:", 20, 50);
+      doc.text("Bill To:", 20, 56);
       doc.setFontSize(12);
-      doc.text(job.client, 20, 57);
+      doc.text(job.client, 20, 63);
       doc.setFontSize(10);
       if (job.address) {
         const addrLines = doc.splitTextToSize(job.address, 90);
-        doc.text(addrLines, 20, 63);
+        doc.text(addrLines, 20, 69);
       }
-      if (job.phone) doc.text(job.phone, 20, 78);
-      if (job.email) doc.text(job.email, 20, 84);
+      if (job.phone) doc.text(job.phone, 20, 84);
+      if (job.email) doc.text(job.email, 20, 90);
 
       if (job.crew) {
         doc.setFontSize(11);
-        doc.text(`Crew: ${job.crew}`, 120, 50);
+        doc.text(`Crew: ${job.crew}`, 120, 56);
       }
 
-      let y = 100;
+      let y = 105;
       doc.setFontSize(11);
       doc.text("Description", 20, y);
       doc.text("Qty", 110, y);
@@ -251,6 +281,10 @@
       doc.setFontSize(11);
       doc.text(`Subtotal: ${money(c.subtotal)}`, 130, y);
       y += 7;
+      if (c.discount > 0) {
+        doc.text(`Discount (${job.discount}%): -${money(c.discount)}`, 130, y);
+        y += 7;
+      }
       if (job.countyTax > 0) {
         doc.text(`County tax (${job.countyTax}%): ${money(c.tax)}`, 130, y);
         y += 7;
@@ -258,9 +292,12 @@
       doc.setFontSize(13);
       doc.text(`Total Due: ${money(c.total)}`, 130, y);
 
+      y += 12;
+      doc.setFontSize(10);
+      doc.text(`Payment terms: Net ${biz.paymentTerms || 14} days`, 20, y);
+
       if (job.notes) {
-        y += 15;
-        doc.setFontSize(10);
+        y += 10;
         doc.text("Notes:", 20, y);
         y += 6;
         const split = doc.splitTextToSize(job.notes, 170);
@@ -287,18 +324,19 @@
         const div = document.createElement("div");
         div.className = "job";
         let actions = `<button data-id="${job.id}" data-action="pdf">View Invoice</button>`;
-        if (job.status === "quote") actions += `<button data-id="${job.id}" data-action="start">Start Work</button>`;
-        else if (job.status === "wip") actions += `<button data-id="${job.id}" data-action="invoice">Raise Invoice</button>`;
-        else if (job.status === "invoiced") actions += `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
+        if (job.status === "quote") actions += `<button data-id="${job.id}" data-action="accept">Accept</button>`;
+        if (job.status === "accepted") actions += `<button data-id="${job.id}" data-action="start">Start Work</button>`;
+        if (job.status === "wip") actions += `<button data-id="${job.id}" data-action="invoice">Raise Invoice</button>`;
+        if (job.status === "invoiced") actions += `<button data-id="${job.id}" data-action="paid">Mark Paid</button>`;
 
         const linesText = (job.lines || []).map(l => `${l.qty}× ${l.service} @ ${money(l.price)}`).join("<br>");
-        const statusClass = job.status === "paid" ? "paid" : job.status === "invoiced" ? "invoiced" : "";
+        const label = STATUS_LABELS[job.status] || job.status;
 
         div.innerHTML = `
           <div class="top">
             <div>
-              <div class="client">${job.client} <span class="status-badge">${job.status.toUpperCase()}</span></div>
-              <div class="meta">${job.crew || "No crew"}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}${job.invoiceNum ? " · Inv #" + job.invoiceNum : ""}</div>
+              <div class="client">${job.client} <span class="status-badge">${label}</span></div>
+              <div class="meta">${job.crew || "No crew"}${job.countyTax ? " · " + job.countyTax + "% tax" : ""}${job.discount ? " · " + job.discount + "% off" : ""}${job.invoiceNum ? " · Inv #" + job.invoiceNum : ""}</div>
               ${job.address ? `<div class="meta">${job.address}</div>` : ""}
               <div class="lines">${linesText || "No line items"}</div>
               ${job.notes ? `<div class="meta">Notes: ${job.notes}</div>` : ""}
@@ -312,6 +350,7 @@
 
       document.getElementById("received").textContent = money(received);
       document.getElementById("pending").textContent = money(pending);
+      document.getElementById("jobCount").textContent = jobs.length;
 
       list.querySelectorAll("button").forEach(btn => {
         btn.onclick = () => action(btn.dataset.id, btn.dataset.action);
@@ -326,7 +365,8 @@
         makeInvoice(job);
         return;
       }
-      if (act === "start") job.status = "wip";
+      if (act === "accept") job.status = "accepted";
+      else if (act === "start") job.status = "wip";
       else if (act === "invoice") {
         job.status = "invoiced";
         job.invoiceDate = Date.now();
@@ -353,6 +393,7 @@
         crew: document.getElementById("crew").value.trim(),
         lines,
         countyTax: parseFloat(document.getElementById("countyTax").value) || 0,
+        discount: parseFloat(document.getElementById("discount").value) || 0,
         notes: document.getElementById("notes").value.trim(),
         status: "quote",
         created: Date.now()
@@ -366,6 +407,7 @@
       document.getElementById("email").value = "";
       document.getElementById("crew").value = "";
       document.getElementById("notes").value = "";
+      document.getElementById("discount").value = "0";
       document.getElementById("lines").innerHTML = "";
       addLineRow();
       render();
@@ -375,10 +417,12 @@
       const biz = {
         name: document.getElementById("bizName").value.trim(),
         address: document.getElementById("bizAddress").value.trim(),
-        phone: document.getElementById("bizPhone").value.trim()
+        phone: document.getElementById("bizPhone").value.trim(),
+        paymentTerms: parseInt(document.getElementById("paymentTerms").value) || 14,
+        discountDefault: parseFloat(document.getElementById("discountDefault").value) || 0
       };
       saveBiz(biz);
-      alert("Business info saved. It will appear on new invoices.");
+      alert("Business info saved.");
     };
 
     document.getElementById("clearBtn").onclick = () => {
@@ -389,11 +433,12 @@
       }
     };
 
-    // Load business info into form
     const biz = loadBiz();
     if (biz.name) document.getElementById("bizName").value = biz.name;
     if (biz.address) document.getElementById("bizAddress").value = biz.address;
     if (biz.phone) document.getElementById("bizPhone").value = biz.phone;
+    if (biz.paymentTerms) document.getElementById("paymentTerms").value = biz.paymentTerms;
+    if (biz.discountDefault) document.getElementById("discountDefault").value = biz.discountDefault;
 
     addLineRow();
     render();
