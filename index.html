@@ -221,20 +221,59 @@
       try { await fetch(SHEET_URL, { method: "POST", mode: "no-cors", body: params }); } catch (e) { console.log("Sheet sync failed", e); }
     }
 
-    function emailInvoice(job) {
+    async function emailInvoice(job) {
       if (!job.email) return alert(lang === "es" ? "No hay correo del cliente" : "No client email on this job");
       const c = calc(job);
       const biz = loadBiz();
-      const subject = encodeURIComponent((lang === "es" ? "Factura " : "Invoice ") + (job.invoiceNum || "") + " - " + (biz.name || "Landscape Services"));
-      const body = encodeURIComponent(
-        (lang === "es" ? "Hola " : "Hello ") + job.client + ",\n\n" +
-        (lang === "es" ? "Adjunto su factura." : "Please find your invoice below.") + "\n\n" +
-        "Invoice #" + (job.invoiceNum || "—") + "\n" +
-        "Total: " + money(c.total) + "\n" +
-        (job.notes ? "Notes: " + job.notes + "\n" : "") +
-        "\nThank you!\n" + (biz.name || "")
-      );
-      window.location.href = "mailto:" + job.email + "?subject=" + subject + "&body=" + body;
+      const invNum = job.invoiceNum || "—";
+      const subject = (lang === "es" ? "Factura " : "Invoice ") + invNum + " - " + (biz.name || "Landscape Services");
+      const text = (lang === "es" ? "Hola " : "Hello ") + job.client + ",\n\n" +
+        (lang === "es" ? "Adjunto su factura." : "Please find your invoice attached.") + "\n\n" +
+        "Invoice #" + invNum + "\nTotal: " + money(c.total) + "\n\nThank you!\n" + (biz.name || "");
+
+      const doc = new jsPDF();
+      const date = new Date(job.created).toLocaleDateString();
+      const due = dueDate(job);
+      doc.setFontSize(18); doc.text(biz.name || "Landscape Services", 20, 22);
+      doc.setFontSize(10); if (biz.address) doc.text(biz.address, 20, 28); if (biz.phone) doc.text(biz.phone, 20, 34);
+      doc.setFontSize(16); doc.text("INVOICE", 140, 22);
+      doc.setFontSize(11); doc.text("#" + invNum, 140, 30); doc.text("Date: " + date, 140, 36); doc.text("Due: " + due, 140, 42);
+      doc.setFontSize(11); doc.text("Bill To:", 20, 56);
+      doc.setFontSize(12); doc.text(job.client, 20, 63);
+      doc.setFontSize(10);
+      if (job.address) { const addrLines = doc.splitTextToSize(job.address, 90); doc.text(addrLines, 20, 69); }
+      if (job.phone) doc.text(job.phone, 20, 84); if (job.email) doc.text(job.email, 20, 90);
+      let y = 105;
+      doc.setFontSize(11); doc.text("Description", 20, y); doc.text("Qty", 110, y); doc.text("Price", 140, y); doc.text("Amount", 170, y);
+      y += 5; doc.line(20, y, 190, y); y += 8;
+      (job.lines || []).forEach(line => {
+        const amt = line.qty * line.price; doc.setFontSize(10);
+        doc.text(line.service, 20, y); doc.text(String(line.qty), 110, y); doc.text(money(line.price), 140, y); doc.text(money(amt), 170, y); y += 7;
+      });
+      y += 4; doc.line(20, y, 190, y); y += 10;
+      doc.setFontSize(11); doc.text("Subtotal: " + money(c.subtotal), 130, y); y += 7;
+      if (c.discount > 0) { doc.text("Discount (" + job.discount + "%): -" + money(c.discount), 130, y); y += 7; }
+      if (job.countyTax > 0) { doc.text("Tax (" + job.countyTax + "%): " + money(c.tax), 130, y); y += 7; }
+      doc.setFontSize(13); doc.text("Total Due: " + money(c.total), 130, y);
+      y += 12; doc.setFontSize(10); doc.text("Payment terms: Net " + (biz.paymentTerms || 14) + " days", 20, y);
+      if (job.notes) { y += 10; doc.text("Notes:", 20, y); y += 6; const split = doc.splitTextToSize(job.notes, 170); doc.text(split, 20, y); }
+      doc.setFontSize(9); doc.text("Thank you for your business!", 20, 270);
+
+      const pdfBlob = doc.output("blob");
+      const file = new File([pdfBlob], "Invoice-" + invNum + "-" + job.client.replace(/\s+/g, "-") + ".pdf", { type: "application/pdf" });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ title: subject, text: text, files: [file] });
+          return;
+        } catch (e) {
+          if (e.name !== "AbortError") console.log("Share failed", e);
+        }
+      }
+      const subjectEnc = encodeURIComponent(subject);
+      const bodyEnc = encodeURIComponent(text);
+      window.location.href = "mailto:" + job.email + "?subject=" + subjectEnc + "&body=" + bodyEnc;
+      alert(lang === "es" ? "El PDF no se adjuntó automáticamente. Ábrelo desde Ver Factura y adjúntalo." : "PDF was not attached automatically. Use View Invoice to save the PDF, then attach it to the email.");
     }
 
     function makeInvoice(job) {
