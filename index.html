@@ -104,7 +104,7 @@
         countyTax: "County tax %", discount: "Discount %",
         notes: "Notes (access, photos link, special instructions…)",
         save: "Save Job", clear: "Clear Phone Jobs",
-        viewInvoice: "View Invoice", accept: "Accept", start: "Start Work", invoice: "Raise Invoice", paid: "Mark Paid",
+        viewInvoice: "View Invoice", emailInvoice: "Email Invoice", accept: "Accept", start: "Start Work", invoice: "Raise Invoice", paid: "Mark Paid",
         noCrew: "No crew", noItems: "No line items", notesPrefix: "Notes: ",
         needCustomer: "Need a customer and at least one line item with a price",
         bizSaved: "Business info saved.",
@@ -124,7 +124,7 @@
         countyTax: "Impuesto %", discount: "Descuento %",
         notes: "Notas (acceso, enlace de fotos, instrucciones especiales…)",
         save: "Guardar trabajo", clear: "Borrar trabajos del teléfono",
-        viewInvoice: "Ver factura", accept: "Aceptar", start: "Comenzar trabajo", invoice: "Generar factura", paid: "Marcar pagado",
+        viewInvoice: "Ver factura", emailInvoice: "Enviar factura", accept: "Aceptar", start: "Comenzar trabajo", invoice: "Generar factura", paid: "Marcar pagado",
         noCrew: "Sin equipo", noItems: "Sin artículos", notesPrefix: "Notas: ",
         needCustomer: "Se necesita un cliente y al menos un artículo con precio",
         bizSaved: "Información guardada.",
@@ -221,6 +221,22 @@
       try { await fetch(SHEET_URL, { method: "POST", mode: "no-cors", body: params }); } catch (e) { console.log("Sheet sync failed", e); }
     }
 
+    function emailInvoice(job) {
+      if (!job.email) return alert(lang === "es" ? "No hay correo del cliente" : "No client email on this job");
+      const c = calc(job);
+      const biz = loadBiz();
+      const subject = encodeURIComponent((lang === "es" ? "Factura " : "Invoice ") + (job.invoiceNum || "") + " - " + (biz.name || "Landscape Services"));
+      const body = encodeURIComponent(
+        (lang === "es" ? "Hola " : "Hello ") + job.client + ",\n\n" +
+        (lang === "es" ? "Adjunto su factura." : "Please find your invoice below.") + "\n\n" +
+        "Invoice #" + (job.invoiceNum || "—") + "\n" +
+        "Total: " + money(c.total) + "\n" +
+        (job.notes ? "Notes: " + job.notes + "\n" : "") +
+        "\nThank you!\n" + (biz.name || "")
+      );
+      window.location.href = "mailto:" + job.email + "?subject=" + subject + "&body=" + body;
+    }
+
     function makeInvoice(job) {
       const c = calc(job);
       const biz = loadBiz();
@@ -267,6 +283,7 @@
         const div = document.createElement("div");
         div.className = "job";
         let actions = `<button data-id="${job.id}" data-action="pdf">${tr("viewInvoice")}</button>`;
+        if (job.email) actions += `<button data-id="${job.id}" data-action="email">${tr("emailInvoice")}</button>`;
         if (job.status === "quote") actions += `<button data-id="${job.id}" data-action="accept">${tr("accept")}</button>`;
         if (job.status === "accepted") actions += `<button data-id="${job.id}" data-action="start">${tr("start")}</button>`;
         if (job.status === "wip") actions += `<button data-id="${job.id}" data-action="invoice">${tr("invoice")}</button>`;
@@ -294,6 +311,7 @@
       const job = jobs.find(j => j.id === id);
       if (!job) return;
       if (act === "pdf") { makeInvoice(job); return; }
+      if (act === "email") { emailInvoice(job); return; }
       if (act === "accept") job.status = "accepted";
       else if (act === "start") job.status = "wip";
       else if (act === "invoice") { job.status = "invoiced"; job.invoiceDate = Date.now(); if (!job.invoiceNum) job.invoiceNum = nextInvoiceNum(); }
@@ -304,17 +322,19 @@
     document.getElementById("btnEn").onclick = () => { lang = "en"; localStorage.setItem(LANG_KEY, lang); applyLang(); };
     document.getElementById("btnEs").onclick = () => { lang = "es"; localStorage.setItem(LANG_KEY, lang); applyLang(); };
     document.getElementById("addLine").onclick = () => addLineRow();
-    document.getElementById("save").onclick = async () => {
+    document.getElementById("save").onclick = () => {
       const client = document.getElementById("client").value.trim();
       const lines = getLines();
       if (!client || lines.length === 0) return alert(tr("needCustomer"));
       const jobs = load();
-      const job = { id: Date.now().toString(), invoiceNum: nextInvoiceNum(), client,
+      const job = {
+        id: Date.now().toString(), invoiceNum: nextInvoiceNum(), client,
         address: document.getElementById("address").value.trim(), phone: document.getElementById("phone").value.trim(),
         email: document.getElementById("email").value.trim(), crew: document.getElementById("crew").value.trim(),
         lines, countyTax: parseFloat(document.getElementById("countyTax").value) || 0,
-        discount: parseFloat(document.getElementById("discount").value) || 0, notes: document.getElementById("notes").value.trim(),
-        status: "quote", created: Date.now() };
+        discount: parseFloat(document.getElementById("discount").value) || 0,
+        notes: document.getElementById("notes").value.trim(), status: "quote", created: Date.now()
+      };
       jobs.push(job); save(jobs); sendToSheet(job);
       document.getElementById("client").value = ""; document.getElementById("address").value = "";
       document.getElementById("phone").value = ""; document.getElementById("email").value = "";
