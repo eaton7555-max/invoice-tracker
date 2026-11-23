@@ -42,9 +42,92 @@
     .status-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 6px; background: #1e3a2f; }
     .row { display: flex; gap: 8px; }
     .row input { flex: 1; }
+    #ownerLock { display: none; position: fixed; inset: 0; z-index: 10000; background: #0c1f17; padding: 20px; overflow: auto; align-items: center; justify-content: center; }
+    #ownerLock.open { display: flex; }
+    #ownerLock .card { background: #14291f; border-radius: 16px; padding: 22px; width: 100%; max-width: 420px; line-height: 1.45; }
+    #ownerLock h2 { font-size: 1.25rem; margin-bottom: 10px; }
+    #ownerLock p { margin-bottom: 12px; }
+    #ownerLock .es { color: #cbd5e1; border-top: 1px solid #1e3a2f; padding-top: 12px; }
+    #ownerLock a { color: #86efac; }
+    #ownerLock .owner-link { display: inline-block; margin-top: 8px; font-size: 0.8rem; color: #94a3b8; background: none; width: auto; padding: 4px 0; text-decoration: underline; cursor: pointer; }
   </style>
 </head>
 <body>
+  <!-- Owner lock: this is the paid full app. Devices other than the owner's get 7 days, then this screen. -->
+  <div id="ownerLock" role="dialog" aria-modal="true">
+    <div class="card">
+      <h2>Landscape Jobs</h2>
+      <p><strong>This is the paid version of Landscape Jobs.</strong> The 7-day free use period on this device has ended. To keep using it, please contact George Eaton to purchase.</p>
+      <p>Want to try it first? Use the free trial: <a href="https://eaton7555-max.github.io/landscape-trial/">eaton7555-max.github.io/landscape-trial</a></p>
+      <p class="es"><strong>Esta es la versión de pago de Landscape Jobs.</strong> El período de uso gratuito de 7 días en este dispositivo ha terminado. Para seguir usándola, comuníquese con George Eaton para comprarla.</p>
+      <p class="es">¿Quiere probarla primero? Use la prueba gratuita: <a href="https://eaton7555-max.github.io/landscape-trial/">eaton7555-max.github.io/landscape-trial</a></p>
+      <p style="font-size:0.8rem;color:#94a3b8;margin-bottom:0;">Your saved jobs on this device are not deleted. / Sus trabajos guardados en este dispositivo no se borran.</p>
+      <button type="button" class="owner-link" id="ownerCodeBtn">Owner? Enter code / ¿Dueño? Ingrese el código</button>
+    </div>
+  </div>
+  <script>
+    // ---- Owner lock (client-side) ----
+    // Never touches job data. Only uses its own landscape-owner-* keys.
+    (function () {
+      const OWNER_FLAG_KEY = "landscape-owner-unlocked";
+      const FIRST_SEEN_KEY = "landscape-owner-first-seen";
+      const LAST_SEEN_KEY = "landscape-owner-last-seen";
+      const FREE_DAYS = 7;
+      const DAY = 24 * 60 * 60 * 1000;
+      // SHA-256 of salt + lowercase owner code. The code itself is not stored here.
+      const OWNER_SALT = "landscape-owner-v1:";
+      const OWNER_HASH = "e4f6520622d6d30c765422beafed17b0bbd67933e1a1144bb4b245af9c9c12f9";
+
+      const lockEl = document.getElementById("ownerLock");
+      function isOwner() { return localStorage.getItem(OWNER_FLAG_KEY) === "1"; }
+      function showLock() { lockEl.classList.add("open"); document.body.style.overflow = "hidden"; }
+      function hideLock() { lockEl.classList.remove("open"); document.body.style.overflow = ""; }
+
+      async function codeMatches(code) {
+        const clean = String(code || "").trim().toLowerCase();
+        if (!clean || !(window.crypto && crypto.subtle)) return false;
+        const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(OWNER_SALT + clean));
+        const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+        return hex === OWNER_HASH;
+      }
+      function setOwner() { localStorage.setItem(OWNER_FLAG_KEY, "1"); hideLock(); }
+
+      function checkLock() {
+        if (isOwner()) { hideLock(); return; }
+        let now = Date.now();
+        const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY), 10) || 0;
+        if (now < lastSeen) now = lastSeen; // ignore the phone clock being set backward
+        localStorage.setItem(LAST_SEEN_KEY, String(now));
+        let first = parseInt(localStorage.getItem(FIRST_SEEN_KEY), 10);
+        if (!first || first > now) { first = now; localStorage.setItem(FIRST_SEEN_KEY, String(first)); }
+        if (now - first >= FREE_DAYS * DAY) showLock(); else hideLock();
+      }
+
+      document.getElementById("ownerCodeBtn").onclick = async () => {
+        const es = (localStorage.getItem("landscape-lang") || "en") === "es";
+        const code = prompt(es ? "Código del dueño:" : "Owner code:");
+        if (code === null) return;
+        if (await codeMatches(code)) { setOwner(); alert(es ? "Desbloqueado en este dispositivo." : "Unlocked on this device."); }
+        else alert(es ? "Código incorrecto." : "Wrong code.");
+      };
+
+      // Hidden owner link: ?owner=CODE sets the flag once, then is removed from the address.
+      const params = new URLSearchParams(location.search);
+      if (params.has("owner")) {
+        const code = params.get("owner");
+        params.delete("owner");
+        const qs = params.toString();
+        history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+        codeMatches(code).then(ok => {
+          if (ok) { setOwner(); alert("Owner unlocked on this device. / Dueño desbloqueado en este dispositivo."); }
+          else checkLock();
+        });
+      }
+      checkLock();
+      // Re-check when the app comes back from the background (home-screen apps can stay open for days).
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkLock(); });
+    })();
+  </script>
   <div class="lang-toggle">
     <button id="btnEn" class="active">English</button>
     <button id="btnEs">Español</button>
